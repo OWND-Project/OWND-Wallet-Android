@@ -5,7 +5,6 @@ import com.auth0.jwt.exceptions.JWTVerificationException
 import com.ownd_project.tw2023_wallet_android.signature.ECPublicJwk
 import com.ownd_project.tw2023_wallet_android.signature.ES256K.createJws
 import com.ownd_project.tw2023_wallet_android.signature.JWT
-import com.ownd_project.tw2023_wallet_android.signature.SignatureUtil.toJwkThumbprint
 import com.ownd_project.tw2023_wallet_android.utils.EnumDeserializer
 import com.ownd_project.tw2023_wallet_android.utils.SDJwtUtil
 import com.fasterxml.jackson.databind.DeserializationFeature
@@ -16,6 +15,7 @@ import com.fasterxml.jackson.module.kotlin.convertValue
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ownd_project.tw2023_wallet_android.utils.SigningOption
 import com.ownd_project.tw2023_wallet_android.utils.KeyUtil
+import com.ownd_project.tw2023_wallet_android.utils.KeyUtil.toJwkThumbprintUri
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -153,9 +153,7 @@ class OpenIdProvider(val uri: String, val option: SigningOption = SigningOption(
                     return Result.failure(Exception("Invalid client_id or host uri"))
                 }
             } else {
-                val jwksUrl = registrationMetadata.jwksUri
-                    ?: throw IllegalStateException("JWKS URLが見つかりません。")
-                JWT.verifyJwtWithJwks(requestObjectJwt, jwksUrl)
+                return Result.failure(Exception("Unsupported serialization of Authorization Request Error"))
             }
 
             val result = try {
@@ -211,20 +209,12 @@ class OpenIdProvider(val uri: String, val option: SigningOption = SigningOption(
                 this.siopRequest.authorizationRequestPayload,
                 this.siopRequest.requestObject
             )
-            val state = authRequest.state
             val nonce = authRequest.nonce
             val SEC_IN_MS = 1000
 
             val subJwk = KeyUtil.keyPairToPublicJwk(keyPair, option)
             // todo: support rsa key
-            val jwk = object : ECPublicJwk {
-                override val kty = subJwk["kty"]!!
-                override val crv = subJwk["crv"]!!
-                override val x = subJwk["x"]!!
-                override val y = subJwk["y"]!!
-            }
-            val prefix = "urn:ietf:params:oauth:jwk-thumbprint:sha-256"
-            val sub = "$prefix:${toJwkThumbprint(jwk)}"
+            val sub = toJwkThumbprintUri(subJwk)
             // https://openid.github.io/SIOPv2/openid-connect-self-issued-v2-wg-draft.html#section-11.1
             // The RP MUST validate that the aud (audience) Claim contains the value of the Client ID that the RP sent in the Authorization Request as an audience.
             // When the request has been signed, the value might be an HTTPS URL, or a Decentralized Identifier.
@@ -256,7 +246,12 @@ class OpenIdProvider(val uri: String, val option: SigningOption = SigningOption(
 
             // As a temporary value, give DIRECT_POST a fixed value.
             // It needs to be modified when responding to redirect responses.
-            val result = sendRequest(redirectUrl, mapOf("id_token" to idToken), ResponseMode.DIRECT_POST)
+            val body = mutableMapOf("id_token" to idToken)
+            val state = authRequest.state
+            if (!state.isNullOrBlank()) {
+                body["state"] = state
+            }
+            val result = sendRequest(redirectUrl, body, ResponseMode.DIRECT_POST)
 
             println("Received result: $result")
             return Either.Right(result)
@@ -405,11 +400,25 @@ class OpenIdProvider(val uri: String, val option: SigningOption = SigningOption(
         if (authRequest.responseMode != ResponseMode.DIRECT_POST) {
             throw IllegalArgumentException("Unsupported response mode: ${authRequest.responseMode}")
         }
+        val objectMapper = jacksonObjectMapper()
         try {
             val (_, payload, _) = JWT.decodeJwt(jwt = credential.credential)
-            val disclosedClaims = payload.mapNotNull { (key, _) ->
-                DisclosedClaim(id = credential.id, types = credential.types, name = key)
-            }
+            val disclosedClaims = payload.mapNotNull { (key, value) ->
+                if (key == "vc") {
+                    val vcMap = objectMapper.readValue(value as String, Map::class.java)
+                    vcMap.mapNotNull { (vcKey, vcValue) ->
+                        if (vcKey == "credentialSubject") {
+                            (vcValue as Map<String, Any>).mapNotNull { (subKey, subValue) ->
+                                DisclosedClaim(id = credential.id, types = credential.types, name = subKey as String)
+                            }
+                        } else {
+                            null
+                        }
+                    }.flatten()
+                } else {
+                    null
+                }
+            }.flatten()
             val vpToken = this.jwtVpJsonGenerator.generateJwt(
                 credential.credential,
                 HeaderOptions(),

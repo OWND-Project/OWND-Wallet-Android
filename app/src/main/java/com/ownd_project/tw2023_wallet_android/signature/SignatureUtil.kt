@@ -163,33 +163,6 @@ object SignatureUtil {
         return KeyPair(publicKey, privateKey)
     }
 
-    // todo [プロジェクト完了後] RSAにも対応する
-    fun toJwkThumbprint(jwk: ECPublicJwk): String {
-        /*
-        https://openid.github.io/SIOPv2/openid-connect-self-issued-v2-wg-draft.html#section-11-3.2.1
-        The thumbprint value of JWK Thumbprint Subject Syntax Type is computed
-         as the SHA-256 hash of the octets of the UTF-8 representation of a JWK constructed containing only the REQUIRED members to represent the key,
-         with the member names sorted into lexicographic order, and with no white space or line breaks.
-         */
-        // JSONオブジェクトマッパーの設定
-        val objectMapper = ObjectMapper()
-        objectMapper.configure(JsonWriteFeature.ESCAPE_NON_ASCII.mappedFeature(), true)
-        objectMapper.configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
-
-        // PublicJwkオブジェクトをMapに変換
-        val jwkMap = objectMapper.convertValue(jwk, Map::class.java) as Map<String, Any>
-
-        // 辞書順にソートしてJSON文字列にエンコード
-        val sortedJsonString = objectMapper.writeValueAsString(jwkMap.toSortedMap())
-
-        // SHA-256でハッシュを計算
-        val messageDigest = MessageDigest.getInstance("SHA-256")
-        val hashedBytes = messageDigest.digest(sortedJsonString.toByteArray(Charsets.UTF_8))
-
-        // Base64Urlエンコード
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(hashedBytes)
-    }
-
     fun generateCertificate(
         keyPair: KeyPair,
         signerKeyPair: KeyPair,

@@ -1,8 +1,13 @@
 package com.ownd_project.tw2023_wallet_android.utils
 
+import com.fasterxml.jackson.core.json.JsonWriteFeature
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.ownd_project.tw2023_wallet_android.signature.ECPublicJwk
 import com.ownd_project.tw2023_wallet_android.signature.toBase64Url
 import java.math.BigInteger
 import java.security.KeyPair
+import java.security.MessageDigest
 import java.security.PublicKey
 import java.security.interfaces.ECPublicKey
 import java.security.interfaces.RSAPublicKey
@@ -70,6 +75,50 @@ object KeyUtil {
         }
     }
 
+    @Deprecated(
+        "This function is deprecated, use newFunction() instead",
+        ReplaceWith("toJwkThumbprint(jwk: Map<String, String>, hashAlgorithm: String = \"SHA-256\"): String")
+    )
+    fun toJwkThumbprint(jwk: ECPublicJwk, hashAlgorithm: String = "SHA-256"): String {
+        // PublicJwkオブジェクトをMapに変換
+        val objectMapper = ObjectMapper()
+        val jwkMap = objectMapper.convertValue(jwk, Map::class.java) as Map<String, String>
+        return toJwkThumbprint(jwkMap, hashAlgorithm)
+    }
+
+    fun toJwkThumbprintUri(jwk: Map<String, String>, hashAlgorithm: String = "SHA-256"): String {
+        // https://www.rfc-editor.org/rfc/rfc9278.html
+        val prefix = "urn:ietf:params:oauth:jwk-thumbprint:${hashAlgorithm.lowercase()}"
+        return "$prefix:${toJwkThumbprint(jwk)}"
+    }
+
+    fun toJwkThumbprint(jwk: Map<String, String>, hashAlgorithm: String = "SHA-256"): String {
+        /*
+        https://openid.github.io/SIOPv2/openid-connect-self-issued-v2-wg-draft.html#section-11-3.2.1
+        The thumbprint value of JWK Thumbprint Subject Syntax Type is computed
+         as the SHA-256 hash of the octets of the UTF-8 representation of a JWK constructed containing only the REQUIRED members to represent the key,
+         with the member names sorted into lexicographic order, and with no white space or line breaks.
+
+        todo key member check defined by JWK and JWA specs.
+        https://www.rfc-editor.org/rfc/rfc7638.html#section-3.2
+         */
+
+        // JSONオブジェクトマッパーの設定
+        val objectMapper = ObjectMapper()
+        objectMapper.configure(JsonWriteFeature.ESCAPE_NON_ASCII.mappedFeature(), true)
+        objectMapper.configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+
+        // 辞書順にソートしてJSON文字列にエンコード
+        val sortedMap = jwk.toSortedMap()
+        val sortedJsonString = objectMapper.writeValueAsString(sortedMap)
+
+        // SHA-256でハッシュを計算
+        val messageDigest = MessageDigest.getInstance(hashAlgorithm)
+        val hashedBytes = messageDigest.digest(sortedJsonString.toByteArray(Charsets.UTF_8))
+
+        // Base64Urlエンコード
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(hashedBytes)
+    }
 }
 
 data class SigningOption(

@@ -2,7 +2,7 @@ package com.ownd_project.tw2023_wallet_android
 
 import com.ownd_project.tw2023_wallet_android.pairwise.HDKeyRing
 import com.ownd_project.tw2023_wallet_android.pairwise.PairwiseAccount.Companion.toECPublicJwk
-import com.ownd_project.tw2023_wallet_android.signature.SignatureUtil.toJwkThumbprint
+import com.ownd_project.tw2023_wallet_android.utils.KeyUtil.toJwkThumbprint
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

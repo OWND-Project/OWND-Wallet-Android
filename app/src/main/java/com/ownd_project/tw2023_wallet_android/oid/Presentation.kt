@@ -21,13 +21,13 @@ data class HeaderOptions(
 )
 
 data class JwtVpJsonPayloadOptions(
-    val iss: String? = null,
-    val jti: String? = null,
-    val aud: String,
-    val nbf: Long? = null,
-    val iat: Long? = null,
-    val exp: Long? = null,
-    val nonce: String
+    var iss: String? = null,
+    var jti: String? = null,
+    var aud: String,
+    var nbf: Long? = null,
+    var iat: Long? = null,
+    var exp: Long? = null,
+    var nonce: String
 )
 
 object JwtVpJsonPresentation {
@@ -65,6 +65,26 @@ object JwtVpJsonPresentation {
                 format = "jwt_vc_json",
                 path = "$.vp.verifiableCredential[${pathNestedIndex}]"
             )
+        )
+    }
+
+    fun genVpJwtPayload(vcJwt: String, payloadOptions: JwtVpJsonPayloadOptions): VpJwtPayload {
+        val vpClaims = mapOf(
+            "@context" to listOf("https://www.w3.org/2018/credentials/v1"),
+            "type" to listOf("VerifiablePresentation"),
+            "verifiableCredential" to listOf(vcJwt)
+        )
+
+        val currentTimeSeconds = System.currentTimeMillis() / 1000
+        return VpJwtPayload(
+            iss = payloadOptions.iss,
+            jti = payloadOptions.jti,
+            aud = payloadOptions.aud,
+            nbf = payloadOptions.nbf ?: currentTimeSeconds,
+            iat = payloadOptions.iat ?: currentTimeSeconds,
+            exp = payloadOptions.exp ?: (currentTimeSeconds + 2 * 3600),
+            nonce = payloadOptions.nonce,
+            vp = vpClaims
         )
     }
 }

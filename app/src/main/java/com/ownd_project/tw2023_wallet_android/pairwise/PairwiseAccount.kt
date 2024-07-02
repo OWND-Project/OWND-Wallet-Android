@@ -4,9 +4,9 @@ import android.content.Context
 import arrow.core.Either
 import com.ownd_project.tw2023_wallet_android.datastore.IdTokenSharingHistoryStore
 import com.ownd_project.tw2023_wallet_android.signature.ECPublicJwk
-import com.ownd_project.tw2023_wallet_android.signature.SignatureUtil.toJwkThumbprint
 import com.google.protobuf.Timestamp
 import com.ownd_project.tw2023_wallet_android.datastore.IdTokenSharingHistory
+import com.ownd_project.tw2023_wallet_android.utils.KeyUtil.toJwkThumbprint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
