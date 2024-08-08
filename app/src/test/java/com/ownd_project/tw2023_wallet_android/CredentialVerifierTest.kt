@@ -7,7 +7,7 @@ import com.ownd_project.tw2023_wallet_android.utils.generateEcKeyPair
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.github.tomakehurst.wiremock.client.WireMock
 import com.ownd_project.tw2023_wallet_android.oid.hasSubjectAlternativeName
-import com.ownd_project.tw2023_wallet_android.signature.JWT.Companion.verifyJwtByX5C
+import com.ownd_project.tw2023_wallet_android.signature.JWT.Companion.verifyJwtByX509
 import com.ownd_project.tw2023_wallet_android.signature.JWT.Companion.verifyJwtByX5U
 import org.junit.After
 import org.junit.Assert
@@ -132,8 +132,23 @@ class CredentialVerifierTest {
             }
         )
     }
+    private val testW3CVcData = mapOf(
+        "@context" to listOf(
+            "https://www.w3.org/ns/credentials/v2",
+            "https://www.w3.org/ns/credentials/examples/v2"
+        ),
+        "id" to "http://university.example/credentials/3732",
+        "type" to listOf("VerifiableCredential", "ExampleDegreeCredential"),
+        "issuer" to "https://university.example/issuers/565049",
+        "validFrom" to "2010-01-01T00:00:00Z",
+        "credentialSubject" to mapOf(
+            "id" to "did:example:ebfeb1f712ebc6f1c276e12ec21",
+            "name" to "Sample Event ABC",
+            "date" to "2024-01-24T00:00:00Z",
+        )
+    )
     @Test
-    fun testVerifyJwtByX5C() {
+    fun testVerifyJwtByX509ByX5c() {
         val cert0 = SignatureUtil.generateCertificate(keyPairTestIssuer, keyPairTestCA, false, listOf("alt1.verifier.com"))
         val encodedCert0 = Base64.getEncoder().encodeToString(cert0.encoded)
         val cert1 =
@@ -150,27 +165,59 @@ class CredentialVerifierTest {
             .withIssuer("https://university.example/issuers/565049")
             .withKeyId("http://university.example/credentials/3732")
             .withSubject("did:example:ebfeb1f712ebc6f1c276e12ec21")
-            .withClaim(
-                "vc", mapOf(
-                    "@context" to listOf(
-                        "https://www.w3.org/ns/credentials/v2",
-                        "https://www.w3.org/ns/credentials/examples/v2"
-                    ),
-                    "id" to "http://university.example/credentials/3732",
-                    "type" to listOf("VerifiableCredential", "ExampleDegreeCredential"),
-                    "issuer" to "https://university.example/issuers/565049",
-                    "validFrom" to "2010-01-01T00:00:00Z",
-                    "credentialSubject" to mapOf(
-                        "id" to "did:example:ebfeb1f712ebc6f1c276e12ec21",
-                        "name" to "Sample Event ABC",
-                        "date" to "2024-01-24T00:00:00Z",
-                    )
-                )
-            )
+            .withClaim("vc", testW3CVcData)
             .withIssuedAt(Date())
             .withHeader(mapOf("x5c" to certs))
             .sign(algorithm)
-        val result = verifyJwtByX5C(token)
+        val result = verifyJwtByX509(token)
+        Assert.assertTrue(result.isSuccess)
+        val (decodedJwt, certificates) = result.getOrThrow()
+        if (!certificates[0].hasSubjectAlternativeName("alt1.verifier.com")) {
+            Assert.fail()
+        }
+        val vc = decodedJwt.getClaim("vc")
+        Assert.assertNotNull(vc)
+    }
+
+    @Test
+    fun testVerifyJwtByX509ByX5u() {
+        val cert0 = SignatureUtil.generateCertificate(
+            keyPairTestIssuer,
+            keyPairTestCA,
+            false,
+            listOf("alt1.verifier.com")
+        )
+        val cert1 =
+            SignatureUtil.generateCertificate(keyPairTestCA, keyPairTestCA, true) // 認証局は自己証明
+
+        val pem0 = SignatureUtil.certificateToPem(cert0)
+        val pem1 = SignatureUtil.certificateToPem(cert1)
+        val pemChain = "$pem0\n$pem1"
+        wireMockServer.stubFor(
+            WireMock.get(WireMock.urlEqualTo("/test-certificate"))
+                .willReturn(
+                    WireMock.aResponse()
+                        .withStatus(200)
+                        .withBody(pemChain)
+                        .withHeader("Content-Type", "application/x-pem-file")
+                )
+        )
+        val x5uUrl = "http://localhost:${wireMockServer.port()}/test-certificate"
+
+        val algorithm =
+            Algorithm.ECDSA256(
+                keyPairTestIssuer.public as ECPublicKey,
+                keyPairTestIssuer.private as ECPrivateKey?
+            )
+        val token = JWT.create()
+            .withIssuer("https://university.example/issuers/565049")
+            .withKeyId("http://university.example/credentials/3732")
+            .withSubject("did:example:ebfeb1f712ebc6f1c276e12ec21")
+            .withClaim("vc", testW3CVcData)
+            .withIssuedAt(Date())
+            .withHeader(mapOf("x5u" to x5uUrl))
+            .sign(algorithm)
+        val result = verifyJwtByX509(token)
         Assert.assertTrue(result.isSuccess)
         val (decodedJwt, certificates) = result.getOrThrow()
         if (!certificates[0].hasSubjectAlternativeName("alt1.verifier.com")) {

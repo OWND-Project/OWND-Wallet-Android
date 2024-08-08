@@ -12,7 +12,6 @@ import com.ownd_project.tw2023_wallet_android.utils.KeyPairUtil
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ownd_project.tw2023_wallet_android.signature.SignatureUtil.convertPemToX509Certificates
 import org.jose4j.jwk.HttpsJwks
-import org.jose4j.jwk.Use
 import org.jose4j.jws.AlgorithmIdentifiers
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -119,13 +118,20 @@ class JWT {
             }
         }
 
-        fun verifyJwtByX5C(jwt: String): Result<Pair<DecodedJWT, Array<X509Certificate>>> {
+        fun verifyJwtByX509(jwt: String): Result<Pair<DecodedJWT, Array<X509Certificate>>> {
             // https://www.rfc-editor.org/rfc/rfc7515.html#section-4.1.6
             // https://www.rfc-editor.org/rfc/rfc7515.html#appendix-B
             val decodedJwt = JWT.decode(jwt)
             val certs = decodedJwt.getHeaderClaim("x5c").asList(String::class.java)
+            val certsUrl = decodedJwt.getHeaderClaim("x5u").asString()
             try {
-                val certificates = convertPemToX509Certificates(certs)
+                val certificates = if (!certs.isNullOrEmpty()) {
+                    convertPemToX509Certificates(certs)
+                } else if (certsUrl != null) {
+                    SignatureUtil.getX509CertificatesFromUrl(certsUrl)
+                } else {
+                    null
+                }
 
                 if (certificates.isNullOrEmpty()) {
                     return Result.failure(Exception("証明書リストが取得できませんでした"))

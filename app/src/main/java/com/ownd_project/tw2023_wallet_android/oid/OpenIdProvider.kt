@@ -1,8 +1,6 @@
 package com.ownd_project.tw2023_wallet_android.oid
 
-import arrow.core.Either
 import com.auth0.jwt.exceptions.JWTVerificationException
-import com.ownd_project.tw2023_wallet_android.signature.ECPublicJwk
 import com.ownd_project.tw2023_wallet_android.signature.ES256K.createJws
 import com.ownd_project.tw2023_wallet_android.signature.JWT
 import com.ownd_project.tw2023_wallet_android.utils.EnumDeserializer
@@ -137,7 +135,7 @@ class OpenIdProvider(val uri: String, val option: SigningOption = SigningOption(
             val clientScheme = payload.clientIdScheme ?: authorizationRequestPayload.clientIdScheme
 
             if (clientScheme == "x509_san_dns") {
-                val verifyResult = JWT.verifyJwtByX5C(requestObjectJwt)
+                val verifyResult = JWT.verifyJwtByX509(requestObjectJwt)
                 if (!verifyResult.isSuccess) {
                     return Result.failure(Exception("Invalid request"))
                 }
