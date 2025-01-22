@@ -45,9 +45,9 @@ data class ClientInfo(
     var certificateInfo: CertificateInfo = CertificateInfo(null, null, null, null, null, null)
 )
 
-val TAG = IdTokenSharringViewModel::class.simpleName
+val TAG = TokenSharingViewModel::class.simpleName
 
-class IdTokenSharringViewModel : ViewModel() {
+class TokenSharingViewModel : ViewModel() {
     var isInitialized = false
     lateinit var openIdProvider: OpenIdProvider
     private val _clientInfo = MutableLiveData<ClientInfo>()
@@ -147,7 +147,7 @@ class IdTokenSharringViewModel : ViewModel() {
                         dataStore.saveSeed(seed)
                     }
                     // SIOP要求処理(一度フラグメント側に制御を返す構造の方が望ましい)
-                    processSiopRequest(fragment.requireContext(), url, seed, index)
+                    processAuthRequest(fragment.requireContext(), url, seed, index)
                 } else {
                     val biometricStatus = (seedState as Either.Left).value
                     Log.d(TAG, "BiometricStatus: $biometricStatus")
@@ -159,7 +159,7 @@ class IdTokenSharringViewModel : ViewModel() {
         }
     }
 
-    private fun processSiopRequest(context: Context, url: String, seed: String, index: Int) {
+    private fun processAuthRequest(context: Context, url: String, seed: String, index: Int) {
         Log.d(TAG, "processSiopRequest")
         viewModelScope.launch(Dispatchers.IO) {
             val opt = SigningOption(signingCurve = "secp256k1", signingAlgo = "ES256K")
@@ -242,10 +242,9 @@ class IdTokenSharringViewModel : ViewModel() {
         }
     }
 
-    fun shareIdToken(fragment: Fragment) {
-        Log.d(TAG, "shareIdToken")
+    fun shareToken(fragment: Fragment, credentials: List<SubmissionCredential>?) {
         viewModelScope.launch(Dispatchers.IO) {
-            val result = openIdProvider.respondToken(null)
+            val result = openIdProvider.respondToken(credentials)
             result.fold(
                 onFailure = { value ->
                     Log.e(TAG, value.message, value)
@@ -261,64 +260,15 @@ class IdTokenSharringViewModel : ViewModel() {
                     }
                 },
                 onSuccess = { tokenSendResult ->
-                    // postに成功したらログイン履歴を記録
-                    Log.d(TAG, "store login history")
-                    val store: IdTokenSharingHistoryStore =
-                        IdTokenSharingHistoryStore.getInstance(fragment.requireContext())
-                    val currentInstant = Instant.now()
-                    val history =
-                        com.ownd_project.tw2023_wallet_android.datastore.IdTokenSharingHistory.newBuilder()
-                            .setRp(openIdProvider.getProcessedRequestData().authorizationRequestPayload.clientId)
-                            .setAccountIndex(index)
-                            .setCreatedAt(
-                                Timestamp.newBuilder()
-                                    .setSeconds(currentInstant.epochSecond)
-                                    .setNanos(currentInstant.nano)
-                                    .build()
-                            )
-                            .build();
-                    store.save(history)
-
-                    withContext(Dispatchers.Main) {
-                        _tokenSendResult.value = tokenSendResult
-                        val context = fragment.requireContext()
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.signed_in),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                },
-            )
-        }
-    }
-
-    fun shareVpToken(fragment: Fragment, credentials: List<SubmissionCredential>) {
-        Log.d(TAG, "shareVPToken")
-        viewModelScope.launch(Dispatchers.IO) {
-            val result = openIdProvider.respondToken(credentials)
-            result.fold(
-                onFailure = { value ->
-                    Log.e(TAG, value.message, value)
-                    withContext(Dispatchers.Main) {
-                        val context = fragment.requireContext()
-                        Toast.makeText(context, value.message, Toast.LENGTH_SHORT).show()
-                        requestClose()
-                    }
-                },
-                onSuccess = { tokenSendResult ->
-                    // postに成功したら提供履歴を記録
-                    Log.d(TAG, "store presentation history")
-                    val store = CredentialSharingHistoryStore.getInstance(fragment.requireContext())
-                    val currentInstant = Instant.now()
-                    val sendResult = tokenSendResult
-                    val sharedContent = tokenSendResult.sharedCredentials
-                    sharedContent?.forEach { it ->
-                        val openIdProviderSiopRequest = openIdProvider.getProcessedRequestData()
-                        val registrationPayload = openIdProviderSiopRequest.registrationMetadata
-                        val builder =
-                            com.ownd_project.tw2023_wallet_android.datastore.CredentialSharingHistory.newBuilder()
-                                .setRp(openIdProviderSiopRequest.authorizationRequestPayload.clientId)
+                    if (tokenSendResult.sharedIdToken != null) {
+                        // postに成功したらログイン履歴を記録
+                        Log.d(TAG, "store id_token sharing history")
+                        val store: IdTokenSharingHistoryStore =
+                            IdTokenSharingHistoryStore.getInstance(fragment.requireContext())
+                        val currentInstant = Instant.now()
+                        val history =
+                            com.ownd_project.tw2023_wallet_android.datastore.IdTokenSharingHistory.newBuilder()
+                                .setRp(openIdProvider.getProcessedRequestData().authorizationRequestPayload.clientId)
                                 .setAccountIndex(index)
                                 .setCreatedAt(
                                     Timestamp.newBuilder()
@@ -326,31 +276,57 @@ class IdTokenSharringViewModel : ViewModel() {
                                         .setNanos(currentInstant.nano)
                                         .build()
                                 )
-                                .setRpName(registrationPayload.clientName)
-                                .setRpPrivacyPolicyUrl(registrationPayload.policyUri)
-                                .setRpLogoUrl(registrationPayload.logoUri)
-                                .setCredentialID(it.id)
-                        it.sharedClaims.forEach { claim ->
-                            val tmp =
-                                com.ownd_project.tw2023_wallet_android.datastore.Claim.newBuilder()
-                                    .setName(claim.name)
-                                    .setPurpose("") // todo: The definition of DisclosedClaim needs to be revised to set this value.
-                                    .setValue("") // todo: The definition of DisclosedClaim needs to be revised to set this value.
-                            builder.addClaims(tmp)
-                        }
-                        val history = builder.build()
+                                .build();
                         store.save(history)
+                    }
+                    if (tokenSendResult.sharedCredentials != null) {
+                        val store =
+                            CredentialSharingHistoryStore.getInstance(fragment.requireContext())
+                        val currentInstant = Instant.now()
+                        tokenSendResult.sharedCredentials?.forEach { it ->
+                            val openIdProviderSiopRequest = openIdProvider.getProcessedRequestData()
+                            val registrationPayload = openIdProviderSiopRequest.registrationMetadata
+                            val builder =
+                                com.ownd_project.tw2023_wallet_android.datastore.CredentialSharingHistory.newBuilder()
+                                    .setRp(openIdProviderSiopRequest.authorizationRequestPayload.clientId)
+                                    .setAccountIndex(index)
+                                    .setCreatedAt(
+                                        Timestamp.newBuilder()
+                                            .setSeconds(currentInstant.epochSecond)
+                                            .setNanos(currentInstant.nano)
+                                            .build()
+                                    )
+                                    .setRpName(registrationPayload.clientName)
+                                    .setRpPrivacyPolicyUrl(registrationPayload.policyUri)
+                                    .setRpLogoUrl(registrationPayload.logoUri)
+                                    .setCredentialID(it.id)
+                            it.sharedClaims.forEach { claim ->
+                                val tmp =
+                                    com.ownd_project.tw2023_wallet_android.datastore.Claim.newBuilder()
+                                        .setName(claim.name)
+                                        .setPurpose("") // todo: The definition of DisclosedClaim needs to be revised to set this value.
+                                        .setValue("") // todo: The definition of DisclosedClaim needs to be revised to set this value.
+                                builder.addClaims(tmp)
+                            }
+                            val history = builder.build()
+                            store.save(history)
+                        }
                     }
 
                     withContext(Dispatchers.Main) {
-                        // 処理完了フラグを更新
-                        if (sendResult.location.isNullOrBlank()) {
-                            // if subsequent action isn't it finishes.
+                        _tokenSendResult.value = tokenSendResult
+                        if (openIdProvider.isVpTokenRequired) {
                             _doneSuccessfully.value = true
+                        } else {
+                            val context = fragment.requireContext()
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.signed_in),
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
-                        _tokenSendResult.value = sendResult
                     }
-                },
+                }
             )
         }
     }
