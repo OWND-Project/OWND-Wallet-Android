@@ -40,7 +40,7 @@ class TokenSharingFragment : Fragment(R.layout.fragment_id_token_sharring) {
 
     private val args: TokenSharingFragmentArgs by navArgs()
     private val sharedViewModel by activityViewModels<CredentialSharingViewModel>()
-    private val viewModel: IdTokenSharringViewModel by viewModels()
+    private val viewModel: TokenSharingViewModel by viewModels()
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         issuerDetailBinding =
@@ -291,9 +291,9 @@ class TokenSharingFragment : Fragment(R.layout.fragment_id_token_sharring) {
         val selectedCredential = sharedViewModel.selectedCredential.value
         if (selectedCredential != null) {
             // todo 複数対応
-            viewModel.shareVpToken(this, listOf(selectedCredential))
+            viewModel.shareToken(this, listOf(selectedCredential))
         } else {
-            viewModel.shareIdToken(this)
+            viewModel.shareToken(this, null)
         }
     }
 
