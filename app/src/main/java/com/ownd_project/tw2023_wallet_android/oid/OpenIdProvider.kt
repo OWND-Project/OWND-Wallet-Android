@@ -225,12 +225,8 @@ class OpenIdProvider(
         // If the parameter is not present, the default value is fragment
         val responseMode = authRequest.responseMode
             ?: ResponseMode.FRAGMENT
-        val responseType = authRequest.responseType
-            ?: return Result.failure(OpenIdProviderException("responseType must be supplied"))
 
-        val requireIdToken = responseType.contains("id_token")
-        val requireVpToken = responseType.contains("vp_token")
-        if (!requireIdToken && !requireVpToken) {
+        if (!isIdTokenRequired && !isVpTokenRequired) {
             return Result.failure(OpenIdProviderException("Both or either `id_token` and `vp_token` are required"))
         }
 
@@ -240,7 +236,7 @@ class OpenIdProvider(
         var vpTokenFormData: FormData? = null
         var vpForHistory: List<SharedCredential>? = null
 
-        if (requireIdToken) {
+        if (isIdTokenRequired) {
             val created = createSiopIdToken()
             when {
                 created.isSuccess -> {
@@ -260,7 +256,7 @@ class OpenIdProvider(
             }
 
         }
-        if (requireVpToken) {
+        if (isVpTokenRequired) {
             credentials
                 ?: return Result.failure(OpenIdProviderException("Credentials to be sent must be supplied"))
             val created = createVpToken(credentials)
@@ -320,6 +316,30 @@ class OpenIdProvider(
             return Result.failure(e)
         }
     }
+
+    val isIdTokenRequired: Boolean
+        get() {
+            // todo: 都度マージするのを避けるべき
+            val authRequest = mergeOAuth2AndOpenIdInRequestPayload(
+                this.authRequestProcessedData.authorizationRequestPayload,
+                this.authRequestProcessedData.requestObject
+            )
+            val responseType = authRequest.responseType
+                ?: throw OpenIdProviderException("responseType must be supplied")
+            return responseType.contains("id_token")
+        }
+
+    val isVpTokenRequired: Boolean
+        get() {
+            // todo: 都度マージするのを避けるべき
+            val authRequest = mergeOAuth2AndOpenIdInRequestPayload(
+                this.authRequestProcessedData.authorizationRequestPayload,
+                this.authRequestProcessedData.requestObject
+            )
+            val responseType = authRequest.responseType
+                ?: throw OpenIdProviderException("responseType must be supplied")
+            return responseType.contains("vp_token")
+        }
 
     private fun createSiopIdToken(): Result<Pair<FormData, String>> {
         try {

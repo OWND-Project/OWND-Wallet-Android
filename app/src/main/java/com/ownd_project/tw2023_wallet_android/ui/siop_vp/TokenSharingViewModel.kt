@@ -315,17 +315,15 @@ class TokenSharingViewModel : ViewModel() {
 
                     withContext(Dispatchers.Main) {
                         _tokenSendResult.value = tokenSendResult
-                        if (tokenSendResult.location.isNullOrBlank()) {
-                            // if subsequent action isn't it finishes.
+                        if (openIdProvider.isVpTokenRequired) {
                             _doneSuccessfully.value = true
-                            if (tokenSendResult.sharedCredentials == null) {
-                                val context = fragment.requireContext()
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.signed_in),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
+                        } else {
+                            val context = fragment.requireContext()
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.signed_in),
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
                 }
