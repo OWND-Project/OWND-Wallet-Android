@@ -122,6 +122,57 @@ class JWT {
             }
         }
 
+        private fun getX509Certs(jwt: String): Array<X509Certificate>? {
+            // https://www.rfc-editor.org/rfc/rfc7515.html#section-4.1.6
+            // https://www.rfc-editor.org/rfc/rfc7515.html#appendix-B
+            val decodedJwt = JWT.decode(jwt)
+            val certs = decodedJwt.getHeaderClaim("x5c")
+            if (certs.isMissing) {
+                val url = decodedJwt.getHeaderClaim("x5u")
+                if (url != null) {
+                    try {
+                        return SignatureUtil.getX509CertificatesFromUrl(url.asString())
+                    } catch (e: Exception) {
+                        println(e)
+                        return null
+                    }
+                }
+            } else {
+                return convertPemToX509Certificates(certs.asList(String::class.java))
+            }
+            return null
+        }
+
+        fun verifyJwtWithX509Certs(jwt: String): Result<Pair<DecodedJWT, Array<X509Certificate>>> {
+            val certificates = getX509Certs(jwt)
+            if (certificates.isNullOrEmpty()) {
+                return Result.failure(Exception("Certificate list could not be retrieved"))
+            }
+            try {
+                val result = verifyJwt(jwt, certificates[0].publicKey)
+                val isTestEnvironment =
+                    System.getProperty("isTestEnvironment")?.toBoolean() ?: false
+                val b = if (isTestEnvironment) {
+                    validateCertificateChain(certificates, certificates.last())
+                } else {
+                    validateCertificateChain(certificates)
+                }
+                // todo row to der エンコーディングの変換ができずjava.security.Signatureを使った実装が未対応(ES256Kサポートのためには対応が必要)
+                return if (result.isRight() && b) {
+                    val decoded = result.getOrNull()!!
+                    Result.success(Pair(decoded, certificates))
+                } else {
+                    Result.failure(Exception("Digital signature verification failed"))
+                }
+            } catch (e: Exception) {
+                println(e)
+                return Result.failure(Exception("Digital signature verification failed"))
+            }
+        }
+
+        @Deprecated(
+            "This function is deprecated, use verifyJwtWithX509Certs(jwt: String) instead",
+        )
         fun verifyJwtByX5C(jwt: String): Result<Pair<DecodedJWT, Array<X509Certificate>>> {
             // https://www.rfc-editor.org/rfc/rfc7515.html#section-4.1.6
             // https://www.rfc-editor.org/rfc/rfc7515.html#appendix-B
@@ -153,6 +204,9 @@ class JWT {
             }
         }
 
+        @Deprecated(
+            "This function is deprecated, use verifyJwtWithX509Certs(jwt: String) instead",
+        )
         fun verifyJwtByX5U(jwt: String): Either<String, DecodedJWT> {
             val decodedJwt = JWT.decode(jwt)
             val url = decodedJwt.getHeaderClaim("x5u").asString()

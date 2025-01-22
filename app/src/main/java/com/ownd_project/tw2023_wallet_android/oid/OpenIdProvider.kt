@@ -145,7 +145,7 @@ class OpenIdProvider(
             val clientScheme = payload.clientIdScheme ?: authorizationRequestPayload.clientIdScheme
 
             if (clientScheme == "x509_san_dns") {
-                val verifyResult = JWT.verifyJwtByX5C(requestObjectJwt)
+                val verifyResult = JWT.verifyJwtWithX509Certs(requestObjectJwt)
                 if (!verifyResult.isSuccess) {
                     return Result.failure(Exception("Invalid request"))
                 }

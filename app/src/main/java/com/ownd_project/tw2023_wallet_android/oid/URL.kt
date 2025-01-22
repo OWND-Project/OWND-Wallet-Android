@@ -26,9 +26,13 @@ fun decodeUriAsJson(uri: String): Map<String, Any> {
     val mapper = jacksonObjectMapper()
 
     for (param in params) {
-        if (param.size != 2) continue
+        if (param.size < 2) continue
         val key = URLDecoder.decode(param[0], "UTF-8")
-        val value = URLDecoder.decode(param[1], "UTF-8")
+        var value = URLDecoder.decode(param[1], "UTF-8")
+        if (param.size == 3) {
+            value += "="
+            value += URLDecoder.decode(param[2], "UTF-8")
+        }
 
         when {
             value.toBooleanStrictOrNull() != null -> json[key] = value.toBoolean()
